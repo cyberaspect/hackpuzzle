@@ -1,0 +1,38 @@
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+pnpm-lock.yaml
+
+# Build output / artifacts
+dist/
+artifacts/
+build/
+out/
+release/
+*.zip
+*.crx
+
+# Scripts
+scripts/
+
+# Environment files
+.env
+.env.*.local
+
+# Editor / IDE
+.vscode/
+.idea/
+
+# Logs
+logs/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Misc
+*.swp

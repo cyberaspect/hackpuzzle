@@ -1,0 +1,44 @@
+{
+  "manifest_version": 3,
+  "name": "hackpuzzle",
+  "version": "0.0.0",
+  "description": "©2025 Infinite Studios. All rights reserved.",
+  "action": {
+    "default_popup": "popup/index.html",
+    "default_icon": {
+      "16": "icons/icon16.svg",
+      "48": "icons/icon48.svg",
+      "128": "icons/icon128.svg"
+    }
+  },
+  "background": {
+    "service_worker": "background/service-worker.js"
+  },
+  "icons": {
+    "16": "icons/icon16.svg",
+    "48": "icons/icon48.svg",
+    "128": "icons/icon128.svg"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://edpuzzle.com/*",
+        "https://*.edpuzzle.com/*"
+      ],
+      "js": [
+        "content/content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "host_permissions": [
+    "https://edpuzzle.com/*",
+    "https://*.edpuzzle.com/*",
+    "https://api.github.com/*"
+  ],
+  "permissions": [
+    "tabs",
+    "storage",
+    "scripting"
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "name": "hackpuzzle-extension",
+  "version": "0.1.0",
+  "description": "Build tooling for the hackpuzzle browser extension",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "build": "node scripts/build.js",
+    "qb": "node scripts/build.js --quick",
+    "clean": "node scripts/build.js --clean",
+    "build:analyze": "node scripts/build.js --analyze",
+    "release": "node scripts/release.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "devDependencies": {
+    "archiver": "^7.0.1",
+    "clean-css": "^5.3.3",
+    "fs-extra": "^11.2.0",
+    "glob": "^10.4.5",
+    "html-minifier-terser": "^7.2.0",
+    "javascript-obfuscator": "^4.1.0",
+    "kleur": "^4.1.5"
+  }
+}
