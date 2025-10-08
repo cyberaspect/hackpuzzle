@@ -1,7 +1,7 @@
 (() => {
-  const ENABLE_LOGGING = true; // flip to false to silence console output
+  const ENABLE_LOGGING = true; // flip to false to silence console output [done automatically in production builds]
   const STORAGE_KEY = 'hpEnabled';
-  const INJECT_MESSAGE_TYPE = 'inject-hackpuzzle';
+  const INJECT_MESSAGE_TYPE = 'hp-inject';
   const PREFIX = 'hp-';
   const WATCH_PATH_REGEX = /^\/assignments\/[^/]+\/watch\/?$/;
 
@@ -70,13 +70,13 @@
   }
 
   function notifyLogPreference() {
-    postToPage({ type: `${PREFIX}log`, enabled: ENABLE_LOGGING });
+  postToPage({ type: `${PREFIX}log`, enabled: ENABLE_LOGGING });
   }
 
   function postFeatureState() {
     const applicable = isWatchPage();
     const effective = featureEnabled && applicable;
-    postToPage({ type: `${PREFIX}toggle`, enabled: effective });
+  postToPage({ type: `${PREFIX}toggle`, enabled: effective });
     log('synced feature state ->', featureEnabled, '(effective:', effective, 'applicable:', applicable, ')');
   }
 
@@ -163,6 +163,19 @@
     }
 
     setFeatureState(items[STORAGE_KEY]);
+  });
+
+  // React to changes to STORAGE_KEY so toggles propagate across tabs immediately
+  chrome.storage.onChanged.addListener((changes, area) => {
+    try {
+      if (area !== 'sync' || !changes || !changes[STORAGE_KEY]) {
+        return;
+      }
+      const next = !!changes[STORAGE_KEY].newValue;
+      setFeatureState(next);
+    } catch (err) {
+      log('storage change handler error', err);
+    }
   });
 
   notifyLogPreference();

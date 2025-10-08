@@ -1,7 +1,7 @@
-const PAGE_SCRIPT_PATH = 'content/hackpuzzle-runtime.js';
+const PAGE_SCRIPT_PATH = 'content/hp-runtime.js';
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (!message || message.type !== 'inject-hackpuzzle') {
+  if (!message || message.type !== 'hp-inject') {
     return;
   }
 

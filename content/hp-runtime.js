@@ -191,12 +191,12 @@
         return;
       }
 
-      if (data.type === 'hackpuzzle-toggle') {
+      if (data.type === 'hp-toggle') {
         window.__hackpuzzle_enabled = !!data.enabled;
         log('hackpuzzle enabled =', window.__hackpuzzle_enabled);
       }
 
-      if (data.type === 'hackpuzzle-log') {
+      if (data.type === 'hp-log') {
         window.__hackpuzzleLogEnabled = !!data.enabled;
         log('hackpuzzle logging =', window.__hackpuzzleLogEnabled);
       }

@@ -109,7 +109,10 @@ function bindUpdateLink() {
 
   updateLinkBound = true;
   updateLink.addEventListener('click', (event) => {
-    event.preventDefault();
+    // Prevent default for left/middle click
+    if (event.button === 0 || event.button === 1) {
+      event.preventDefault();
+    }
     const targetUrl = updateLink.dataset.url || GITHUB_RELEASE_CONFIG.releasesUrl;
     if (!targetUrl) {
       return;
@@ -236,9 +239,9 @@ async function checkForReleaseUpdates() {
 }
 
 const STATUS_VARIANTS = {
-  loading: { badge: 'status-badge--loading', dot: 'status-dot--loading', message: 'hang tight...' },
-  on: { badge: 'status-badge--on', dot: 'status-dot--on', message: 'features enabled' },
-  off: { badge: 'status-badge--off', dot: 'status-dot--off', message: 'features disabled' },
+  loading: { badge: 'status-badge--loading', dot: 'status-dot--loading', message: 'loading...' },
+  on: { badge: 'status-badge--on', dot: 'status-dot--on', message: 'enabled' },
+  off: { badge: 'status-badge--off', dot: 'status-dot--off', message: 'disabled' },
   standby: { badge: 'status-badge--standby', dot: 'status-dot--standby', message: 'waiting for response' },
   unavailable: { badge: 'status-badge--error', dot: 'status-dot--error', message: 'unavailable' }
 };
@@ -295,9 +298,21 @@ function persistPreference(enabled) {
   });
 }
 
+// Promise-based setter to ensure storage is flushed before proceeding
+function persistPreferenceAsync(enabled) {
+  return new Promise((resolve) => {
+    chrome.storage.sync.set({ [STORAGE_KEY]: enabled }, () => {
+      if (chrome.runtime.lastError) {
+        console.warn('popup storage set error', chrome.runtime.lastError);
+      }
+      resolve();
+    });
+  });
+}
+
 function loadCompactPreference() {
   try {
-    return localStorage.getItem('hpCompact') === 'true';
+    return localStorage.getItem('hp-use-compact-mode') === 'true';
   } catch (_) {
     return false;
   }
@@ -305,7 +320,7 @@ function loadCompactPreference() {
 
 function persistCompactPreference(enabled) {
   try {
-    localStorage.setItem('hpCompact', enabled ? 'true' : 'false');
+    localStorage.setItem('hp-use-compact-mode', enabled ? 'true' : 'false');
   } catch (_) {}
 }
 
@@ -334,7 +349,7 @@ function isAssignmentWatchUrl(url) {
 }
 
 function applyNonWatchStatus(enabled) {
-  const message = enabled ? 'features ready...' : undefined;
+  const message = enabled ? 'ready' : undefined;
   applyStatus(enabled ? 'on' : 'off', message);
 }
 
@@ -343,6 +358,103 @@ async function getActiveTab() {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       resolve(tabs[0]);
     });
+  });
+}
+
+function listEdpuzzleTabs() {
+  return new Promise((resolve) => {
+    // Query all tabs that match Edpuzzle URLs
+    chrome.tabs.query({ url: [
+      'https://edpuzzle.com/*',
+      'https://*.edpuzzle.com/*'
+    ] }, (tabs) => resolve(tabs || []));
+  });
+}
+
+async function reloadEdpuzzleTabs() {
+  try {
+    const tabs = await listEdpuzzleTabs();
+    for (const t of tabs) {
+      try { chrome.tabs.reload(t.id); } catch (_) { /* ignore */ }
+    }
+  } catch (e) {
+    console.warn('failed to reload edpuzzle tabs', e);
+  }
+}
+
+function getTab(tabId) {
+  return new Promise((resolve) => {
+    try {
+      chrome.tabs.get(tabId, (tab) => resolve(tab));
+    } catch (_) {
+      resolve(null);
+    }
+  });
+}
+
+function waitForTabComplete(tabId, { timeoutMs = 20000, checkInterval = 300 } = {}) {
+  return new Promise((resolve) => {
+    const started = Date.now();
+    const check = async () => {
+      const tab = await getTab(tabId);
+      if (tab && tab.status === 'complete') {
+        return resolve(true);
+      }
+      if (Date.now() - started >= timeoutMs) {
+        return resolve(false);
+      }
+      setTimeout(check, checkInterval);
+    };
+    check();
+  });
+}
+
+function pollTabStatus(tabId, { attempts = 30, interval = 500, message = 'checking status...' } = {}) {
+  return new Promise((resolve) => {
+    let tries = 0;
+    const tick = async () => {
+      tries += 1;
+      // If the tab is still loading, wait a bit before messaging the content script
+      const ready = await waitForTabComplete(tabId, { timeoutMs: 0 });
+      if (!ready) {
+        if (tries >= attempts) {
+          const saved = await loadPreference();
+          syncToggle(saved);
+          applyStatus('unavailable', 'unavailable');
+          return resolve(false);
+        }
+        applyStatus('loading', 'loading page...');
+        return setTimeout(tick, interval);
+      }
+
+      chrome.tabs.sendMessage(tabId, { action: 'getFeatureState' }, async (resp) => {
+        if (chrome.runtime.lastError || !resp || typeof resp.featureEnabled !== 'boolean') {
+          // Treat missing receiver as transient while content scripts re-inject
+          const lastErr = chrome.runtime.lastError && chrome.runtime.lastError.message || '';
+          const transient = /Receiving end does not exist|The message port closed/i.test(lastErr);
+          if (tries >= attempts) {
+            // Give up after attempts; fall back to stored preference
+            const saved = await loadPreference();
+            syncToggle(saved);
+            applyStatus('unavailable', 'unavailable');
+            return resolve(false);
+          }
+          applyStatus('loading', transient ? 'waiting for page...' : message);
+          return setTimeout(tick, interval);
+        }
+
+        const enabled = !!resp.featureEnabled;
+        const applicable = typeof resp.applicable === 'boolean' ? resp.applicable : true;
+        syncToggle(enabled);
+        if (!applicable) {
+          applyNonWatchStatus(enabled);
+        } else {
+          applyStatus(enabled ? 'on' : 'off');
+        }
+        return resolve(true);
+      });
+    };
+    tick();
   });
 }
 
@@ -382,17 +494,15 @@ async function updateStatusFromTab(messageOverride) {
   }
 
   chrome.tabs.sendMessage(tab.id, { action: 'getFeatureState' }, async (resp) => {
-    if (chrome.runtime.lastError) {
+    if (chrome.runtime.lastError || !resp || typeof resp.featureEnabled !== 'boolean') {
+      // Instead of falling into a sticky standby, poll a few times to await content readiness
+      if (tabIsWatchPage) {
+        await pollTabStatus(tab.id, { attempts: 12, interval: 500, message: 'waiting for page...' });
+        return;
+      }
       const saved = await loadPreference();
       syncToggle(saved);
-      applyStatus('standby');
-      return;
-    }
-
-    if (!resp || typeof resp.featureEnabled !== 'boolean') {
-      const fallback = await loadPreference();
-      syncToggle(fallback);
-      applyStatus('standby');
+      applyNonWatchStatus(saved);
       return;
     }
 
@@ -425,94 +535,27 @@ async function initialize() {
   if (featureToggle) {
     featureToggle.addEventListener('change', async (event) => {
       const enabled = !!event.target.checked;
-      const previousState = !enabled;
-      persistPreference(enabled);
-      // applyStatus('loading', 'applying preference...'); commenting this out because it flickers too much
+      syncToggle(enabled);
+      applyStatus('loading', enabled ? 'enabling...' : 'disabling...');
 
+      // Persist and wait to ensure content pages can read the setting
+      await persistPreferenceAsync(enabled);
+
+      // Reload all Edpuzzle tabs so the change takes effect reliably
+      await reloadEdpuzzleTabs();
+
+      // After reloads, wait for the active tab to finish loading, then poll status if it's a watch page
       const tab = await getActiveTab();
-      if (!tab) {
-        applyStatus(enabled ? 'on' : 'off');
-        return;
-      }
-
-      const tabIsWatchPage = isAssignmentWatchUrl(tab.url);
-      const shouldReloadOnDisable = tabIsWatchPage && !enabled;
-
-      if (!tabIsWatchPage) {
+      if (tab && isAssignmentWatchUrl(tab.url) && tab.id != null) {
+        const loaded = await waitForTabComplete(tab.id, { timeoutMs: 20000, checkInterval: 300 });
+        void pollTabStatus(tab.id, {
+          attempts: loaded ? 30 : 40,
+          interval: 500,
+          message: enabled ? 'enabling...' : 'disabling...'
+        });
+      } else {
         applyNonWatchStatus(enabled);
-        syncToggle(enabled);
-        return;
       }
-
-      chrome.tabs.sendMessage(tab.id, { action: 'setFeatureState', enabled }, (resp) => {
-        if (chrome.runtime.lastError) {
-          if (tabIsWatchPage) {
-            applyStatus('standby', 'waiting for page response...');
-          } else {
-            applyNonWatchStatus(previousState);
-          }
-
-          persistPreference(previousState);
-          syncToggle(previousState);
-
-          if (shouldReloadOnDisable) {
-            try {
-              chrome.tabs.reload(tab.id);
-            } catch (e) {
-              // ignore reload errors
-            }
-            setTimeout(() => updateStatusFromTab('checking status...'), 1000);
-          }
-          return;
-        }
-
-        if (!resp || typeof resp.featureEnabled !== 'boolean') {
-          if (tabIsWatchPage) {
-            applyStatus('standby', 'waiting for page response...');
-          } else {
-            applyNonWatchStatus(previousState);
-          }
-
-          persistPreference(previousState);
-          syncToggle(previousState);
-
-          if (shouldReloadOnDisable) {
-            try {
-              chrome.tabs.reload(tab.id);
-            } catch (e) {
-              // ignore reload errors
-            }
-            setTimeout(() => updateStatusFromTab('checking status...'), 1000);
-          }
-          return;
-        }
-
-        const current = !!resp.featureEnabled;
-        const applicable = typeof resp.applicable === 'boolean' ? resp.applicable : tabIsWatchPage;
-        persistPreference(current);
-        syncToggle(current);
-
-        if (!applicable) {
-          applyNonWatchStatus(current);
-          return;
-        }
-
-        if (shouldReloadOnDisable) {
-          applyStatus('standby', current ? 'retrying after page reload...' : 'waiting for page reload...');
-          try {
-            chrome.tabs.reload(tab.id);
-          } catch (e) {
-            // ignore reload errors
-          }
-          setTimeout(
-            () => updateStatusFromTab(current ? 'verifying disable...' : 'checking status...'),
-            1000
-          );
-          return;
-        }
-
-        applyStatus(current ? 'on' : 'off');
-      });
     });
   }
 
