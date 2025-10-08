@@ -1,6 +1,6 @@
 # hackpuzzle
 ## installation
-1. grab the latest release [right here](https://github.com/cyberaspect/hackpuzzle/releases)
+1. grab the latest release [right here](https://github.com/cyberaspect/hackpuzzle/releases/latest)
 2. unzip the .zip release into a folder
 3. go to chrome://extensions and enable the Developer Mode toggle in the top right
 4. click on "Load unpacked" on the toolbar and select the folder you just unzipped from Releases
