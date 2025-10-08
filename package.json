@@ -1,6 +1,6 @@
 {
   "name": "hackpuzzle-extension",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Build tooling for the hackpuzzle browser extension",
   "license": "MIT",
   "private": true,
