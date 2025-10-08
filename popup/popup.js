@@ -173,10 +173,12 @@ async function fetchLatestReleaseMetadata() {
   try {
     const response = await fetch(endpoint, {
       method: 'GET',
+      // Keep only CORS-safelisted headers to avoid preflight.
       headers: {
-        Accept: 'application/vnd.github+json',
-        'Cache-Control': 'no-cache'
-      }
+        Accept: 'application/vnd.github+json'
+      },
+      // Use fetch cache control instead of sending a Cache-Control header.
+      cache: 'no-store'
     });
 
     if (!response.ok) {
