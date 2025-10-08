@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "hackpuzzle",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "©2025 Infinite Studios. All rights reserved.",
   "action": {
     "default_popup": "popup/index.html",
