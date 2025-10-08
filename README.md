@@ -8,4 +8,4 @@
 5. you did it
 
 ## usage
-use the big green toggle switch and turn it off and on. it can't get any more simple than that
+use the big green toggle switch and turn it off and on. it cannot get any more simple than that
