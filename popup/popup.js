@@ -7,6 +7,24 @@ const compactBtn = document.getElementById('compactBtn');
 const flushBtn = document.getElementById('flushBtn');
 const compactExitBtn = document.getElementById('compactExitBtn');
 const compactFlushBtn = document.getElementById('compactFlushBtn');
+const warningBanner = document.getElementById('hp-warning-banner');
+const warningCloseBtn = document.getElementById('hp-warning-close');
+const warningFlushBtn = document.getElementById('hp-flush-btn');
+let warningBannerVisible = false;
+
+function showWarningBanner() {
+  if (warningBanner && !warningBannerVisible) {
+    warningBanner.style.display = 'flex';
+    warningBannerVisible = true;
+  }
+}
+
+function hideWarningBanner() {
+  if (warningBanner && warningBannerVisible) {
+    warningBanner.style.display = 'none';
+    warningBannerVisible = false;
+  }
+}
 
 const versionLabel = document.getElementById('version-label');
 const updateNotice = document.getElementById('update-notice');
@@ -92,7 +110,7 @@ function showUpdateNotice(release, remoteVersion) {
     : GITHUB_RELEASE_CONFIG.releasesUrl;
 
   updateNotice.style.display = 'inline-flex';
-  updateLink.textContent = 'a new version is available';
+  updateLink.textContent = 'update available';
   updateLink.dataset.url = releaseUrl;
   updateLink.title = remoteVersion ? `Open release v${remoteVersion}` : 'Open latest release';
   if (remoteVersion) {
@@ -110,7 +128,7 @@ function bindUpdateLink() {
   updateLinkBound = true;
   updateLink.addEventListener('click', (event) => {
     // Prevent default for left/middle click
-    if (event.button === 0 || event.button === 1) {
+    if ([0, 1].includes(event.button)) {
       event.preventDefault();
     }
     const targetUrl = updateLink.dataset.url || GITHUB_RELEASE_CONFIG.releasesUrl;
@@ -266,8 +284,16 @@ function applyStatus(state, overrideMessage) {
     statusText.textContent = overrideMessage || variant.message;
   }
 
+
   if (featureToggle) {
     featureToggle.disabled = state === 'standby' || state === 'loading';
+  }
+
+  // Show warning banner if status is unavailable
+  if (state === 'unavailable') {
+    showWarningBanner();
+  } else {
+    hideWarningBanner();
   }
 }
 
@@ -476,11 +502,13 @@ function flushActiveTab() {
 }
 
 async function updateStatusFromTab(messageOverride) {
+  if (refreshButton) refreshButton.disabled = true;
   applyStatus('loading', messageOverride);
 
   const tab = await getActiveTab();
   if (!tab) {
     applyStatus('unavailable', 'no active tab');
+    showWarningBanner();
     return;
   }
 
@@ -490,33 +518,49 @@ async function updateStatusFromTab(messageOverride) {
     const saved = await loadPreference();
     syncToggle(saved);
     applyNonWatchStatus(saved);
+    hideWarningBanner();
     return;
   }
 
-  chrome.tabs.sendMessage(tab.id, { action: 'getFeatureState' }, async (resp) => {
-    if (chrome.runtime.lastError || !resp || typeof resp.featureEnabled !== 'boolean') {
-      // Instead of falling into a sticky standby, poll a few times to await content readiness
-      if (tabIsWatchPage) {
-        await pollTabStatus(tab.id, { attempts: 12, interval: 500, message: 'waiting for page...' });
-        return;
+  let statusOk = false;
+  await new Promise((resolve) => {
+    chrome.tabs.sendMessage(tab.id, { action: 'getFeatureState' }, async (resp) => {
+      if (chrome.runtime.lastError || !resp || typeof resp.featureEnabled !== 'boolean') {
+        // Instead of falling into a sticky standby, poll a few times to await content readiness
+        if (tabIsWatchPage) {
+          const pollResult = await pollTabStatus(tab.id, { attempts: 12, interval: 500, message: 'waiting for page...' });
+          statusOk = !!pollResult;
+          if (!statusOk) showWarningBanner();
+          else hideWarningBanner();
+          if (refreshButton) refreshButton.disabled = false;
+          return resolve();
+        }
+        const saved = await loadPreference();
+        syncToggle(saved);
+        applyNonWatchStatus(saved);
+        showWarningBanner();
+        if (refreshButton) refreshButton.disabled = false;
+        return resolve();
       }
-      const saved = await loadPreference();
-      syncToggle(saved);
-      applyNonWatchStatus(saved);
-      return;
-    }
 
-    const enabled = !!resp.featureEnabled;
-    const applicable = typeof resp.applicable === 'boolean' ? resp.applicable : true;
+      const enabled = !!resp.featureEnabled;
+      const applicable = typeof resp.applicable === 'boolean' ? resp.applicable : true;
 
-    if (!applicable) {
+      if (!applicable) {
+        syncToggle(enabled);
+        applyNonWatchStatus(enabled);
+        hideWarningBanner();
+        if (refreshButton) refreshButton.disabled = false;
+        return resolve();
+      }
+
       syncToggle(enabled);
-      applyNonWatchStatus(enabled);
-      return;
-    }
-
-    syncToggle(enabled);
-    applyStatus(enabled ? 'on' : 'off');
+      applyStatus(enabled ? 'on' : 'off');
+      hideWarningBanner();
+      statusOk = true;
+      if (refreshButton) refreshButton.disabled = false;
+      return resolve();
+    });
   });
 }
 
@@ -562,6 +606,19 @@ async function initialize() {
   if (refreshButton) {
     refreshButton.addEventListener('click', () => {
       updateStatusFromTab('refreshing...');
+    });
+  }
+
+  // Wire up warning banner flush and close buttons
+  if (warningFlushBtn) {
+    warningFlushBtn.addEventListener('click', () => {
+      flushActiveTab();
+      hideWarningBanner();
+    });
+  }
+  if (warningCloseBtn) {
+    warningCloseBtn.addEventListener('click', () => {
+      hideWarningBanner();
     });
   }
 

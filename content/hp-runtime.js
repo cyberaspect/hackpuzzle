@@ -201,7 +201,7 @@
         log('hackpuzzle logging =', window.__hackpuzzleLogEnabled);
       }
     } catch (_) {
-      // swallow message errors
+      // swallow message errors. gulp!
     }
   }, false);
 
